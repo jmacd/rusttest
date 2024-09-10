@@ -10,7 +10,7 @@ struct System {
 }
 
 trait Folder: std::fmt::Debug {
-    fn subdir(&mut self, sys: &mut System, name: &str) -> Option<Rc<RefCell<dyn Folder>>>;
+    fn subdir<'a: 'b, 'b>(&'_ mut self, sys: &'a mut System, name: &str) -> WD<'b>;
 }
 
 #[derive(Debug)]
@@ -22,25 +22,28 @@ struct Realdir {
 struct Dynadir {}
 
 impl Folder for Realdir {
-    fn subdir(&mut self, _sys: &mut System, name: &str) -> Option<Rc<RefCell<dyn Folder>>> {
-        Some(
-            self.subdirs
-                .entry(name.to_string())
-                .or_insert_with(|| {
-                    if name.to_string() == "dynamic" {
-                        Rc::new(RefCell::new(Dynadir::new()))
-                    } else {
-                        Rc::new(RefCell::new(Realdir::new()))
-                    }
-                })
-                .clone(),
-        )
+    fn subdir<'a: 'b, 'b>(&'_ mut self, sys: &'a mut System, name: &str) -> WD<'b> {
+        let child = self
+            .subdirs
+            .entry(name.to_string())
+            .or_insert_with(|| {
+                if name.to_string() == "dynamic" {
+                    Rc::new(RefCell::new(Dynadir::new()))
+                } else {
+                    Rc::new(RefCell::new(Realdir::new()))
+                }
+            })
+            .clone();
+        WD {
+            sys: sys,
+            node: child,
+        }
     }
 }
 
 impl Folder for Dynadir {
-    fn subdir(&mut self, sys: &mut System, _name: &str) -> Option<Rc<RefCell<dyn Folder>>> {
-        Some(sys.wd().lookup(Path::new("d/e/f")))
+    fn subdir<'a: 'b, 'b>(&'_ mut self, sys: &'a mut System, _name: &str) -> WD<'b> {
+        sys.wd().lookup(Path::new("d/e/f")).unwrap()
     }
 }
 
@@ -77,16 +80,28 @@ struct WD<'a> {
 }
 
 impl<'a> WD<'a> {
-    fn lookup(&mut self, path: &Path) -> Rc<RefCell<dyn Folder + 'a>> {
-        let mut node = self.node.clone();
-        for name in path.components() {
-            let s: &OsStr = name.as_ref();
-            let n = s.to_str().unwrap();
-            eprintln!("{}", n);
-            let tmp = node.borrow_mut().subdir(self.sys, n).unwrap();
-            node = tmp;
+    // I've also tried
+    // fn lookup(&'_ mut self, path: &'_ Path) -> Option<WD<'a>> {
+
+    fn lookup<'b>(&'b mut self, path: &'_ Path) -> Option<WD<'a>>
+    where
+        'a: 'b,
+    {
+        let node = self.node.clone();
+        let mut comp = path.components();
+        let first = comp.next().unwrap();
+        let second = comp.as_path();
+
+        let fosstr: &OsStr = first.as_ref();
+        let fstr = fosstr.to_str().unwrap();
+
+        let mut child = node.borrow_mut().subdir(self.sys, fstr);
+
+        if second.as_os_str().is_empty() {
+            Some(child)
+        } else {
+            child.lookup(second)
         }
-        node
     }
 }
 

@@ -34,3 +34,72 @@ help: to declare that the trait object captures data from argument `sys`, you ca
    |                                                                                         ++++
 
 ```
+
+
+```
+    fn lookup<'b>(&'b mut self, path: &'_ Path) -> Option<WD<'a>>
+    where
+        'a: 'b,
+```
+
+gives
+```
+error: lifetime may not live long enough
+   --> src/main.rs:101:13
+    |
+82  | impl<'a> WD<'a> {
+    |      -- lifetime `'a` defined here
+...
+86  |     fn lookup<'b>(&'b mut self, path: &'_ Path) -> Option<WD<'a>>
+    |               -- lifetime `'b` defined here
+...
+101 |             Some(child)
+    |             ^^^^^^^^^^^ method was supposed to return data with lifetime `'a` but it is returning data with lifetime `'b`
+    |
+    = help: consider adding the following bound: `'b: 'a`
+    = note: requirement occurs because of the type `WD<'_>`, which makes the generic argument `'_` invariant
+    = note: the struct `WD<'a>` is invariant over the parameter `'a`
+    = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+```
+
+```
+    fn lookup<'b>(&'b mut self, path: &'_ Path) -> Option<WD<'a>>
+    where
+        'b: 'a,
+```
+
+gives e.g.,
+
+```
+error[E0515]: cannot return value referencing temporary value
+  --> src/main.rs:46:9
+   |
+46 |         sys.wd().lookup(Path::new("d/e/f")).unwrap()
+   |         --------^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |         |
+   |         returns a value referencing data owned by the current function
+   |         temporary value created here
+
+```
+
+(and didn't seem right)
+
+lastly
+
+```
+    fn lookup(&'_ mut self, path: &'_ Path) -> Option<WD<'a>> {
+```
+
+```
+error: lifetime may not live long enough
+  --> src/main.rs:95:13
+   |
+82 | impl<'a> WD<'a> {
+   |      -- lifetime `'a` defined here
+83 |     fn lookup(&'_ mut self, path: &'_ Path) -> Option<WD<'a>> {
+   |               - let's call the lifetime of this reference `'1`
+...
+95 |             Some(child)
+   |             ^^^^^^^^^^^ method was supposed to return data with lifetime `'a` but it is returning data with lifetime `'1`
+   |
+```
